@@ -1,0 +1,8 @@
+albumentations
+kaggle
+matplotlib
+numpy
+opencv-python
+opendatasets
+pandas
+roboflow
