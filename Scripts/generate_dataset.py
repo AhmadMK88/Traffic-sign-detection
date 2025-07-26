@@ -100,7 +100,9 @@ def resize_example(image, label, size = (640, 640)):
 def main():
 
     # Parse script arguments
-    parser = argparse.ArgumentParser(description="Download background images from Roboflow")
+    parser = argparse.ArgumentParser(
+        description="Script to generate dataset using datasets from kaggle and roboflow"
+    )
 
     parser.add_argument('--roboflow_api_key', type=str, required=True, help='Roboflow API key')
     parser.add_argument('--kaggle_username', type=str, required=True, help='kaggle username')
