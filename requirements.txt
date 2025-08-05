@@ -6,3 +6,5 @@ opencv-python
 opendatasets
 pandas
 roboflow
+torch
+torchvision
