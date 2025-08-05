@@ -4,6 +4,7 @@ import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 import os
 import random
+from Utils.dataset import SyentheticDataset
 
 def main():
 
@@ -28,40 +29,37 @@ def main():
     # Pick a random image
     image_number = random.randint(0, len(os.listdir(args.image_path)) - 1)
 
-    # Get image and label full path
-    image_path = os.path.join(args.image_path, f'image #{image_number}.jpg')
-    label_path = os.path.join(args.label_path, f'label #{image_number}.txt')
+    # Craete SyentheticDataset object
+    dataset = SyentheticDataset(args.image_path, args.label_path)
 
-    image = cv2.imread(image_path)
-    image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+    # Get image
+    image = dataset[image_number][0]
     image_height, image_width = image.shape[:2]
 
     fig, ax = plt.subplots(1)
     ax.imshow(image)
 
-    # Read labels and draw boxes
-    with open(label_path, 'r') as f:
-        for line in f:
-            parts = line.strip().split()
-            class_id, x_center, y_center, width, height = map(float, parts)
+    # Get label and draw boxes
+    label = dataset[image_number][1]
+    class_id, x_center, y_center, width, height = map(float, label)
 
-            # Convert from YOLO format to pixel coordinates
-            x_center *= image_width
-            y_center *= image_height
-            width *= image_width
-            height *= image_height
+    # Convert from YOLO format to pixel coordinates
+    x_center *= image_width
+    y_center *= image_height
+    width *= image_width
+    height *= image_height
 
-            x_min = x_center - width / 2
-            y_min = y_center - height / 2
+    x_min = x_center - width / 2
+    y_min = y_center - height / 2
 
-            # Draw bounding box
-            rect = patches.Rectangle((x_min, y_min), width, height,linewidth=2, edgecolor='red', facecolor='none')
-            ax.add_patch(rect)
+    # Draw bounding box
+    rect = patches.Rectangle((x_min, y_min), width, height,linewidth=2, edgecolor='red', facecolor='none')
+    ax.add_patch(rect)
 
-            # Add class label above box
-            class_id_int = int(class_id)
-            class_name = class_to_name[class_id_int]
-            ax.text(x_min, y_min - 5, class_name, fontsize=10,color='white', bbox=dict(facecolor='red'))
+    # Add class label above box
+    class_id_int = int(class_id)
+    class_name = class_to_name[class_id_int]
+    ax.text(x_min, y_min - 5, class_name, fontsize=10,color='white', bbox=dict(facecolor='red'))
 
     # Hide axes and show result
     plt.axis('off')
