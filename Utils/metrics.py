@@ -116,7 +116,7 @@ def compute_ap(recall, precision):
     
     # 11-point interpolation (VOC 2007 style)
     ap = 0.0
-    for t in torch.linspace(0, 1, 11):
+    for t in np.linspace(0, 1, 11):
         p = precision[recall >= t].max() if (recall >= t).any() else 0
         ap += p / 11
     
@@ -128,33 +128,39 @@ def compute_map(predictions, ground_truths, iou_threshold=0.5, score_threshold=0
 
     Args:
         predictions (list): Each element is a dict with keys:
-            - 'boxes': tensor (num_preds, 4) xywh
-            - 'scores': tensor (num_preds,)
-            - 'labels': tensor (num_preds,)
+            - 'bbox': tensor (number_of_predictions, 4) xywh
+            - 'scores': tensor (number_of_predictions,)
+            - 'labels': tensor (number_of_predictions,)
         ground_truths (list): Each element is a dict with keys:
-            - 'boxes': tensor (1, 4) xywh   # only 1 GT per image
+            - 'bbox': tensor (1, 4) xywh   # only 1 GT per image
             - 'labels': tensor (1,)         # only 1 GT class
     Returns:
         mAP (float): mean Average Precision 
     """
     aps = []
     classes = torch.unique(
-        torch.cat([ground_truth["labels"] for ground_truth in ground_truths])
+        torch.cat(
+            [ground_truth["labels"].unsqueeze(0) for ground_truth in ground_truths]
+        )
     ).tolist()
 
     for cls in classes:
-        
+
         class_scores = []
         class_matches = []
         num_of_groundThruth_boxes = 0
 
         for prediction, ground_truth in zip(predictions, ground_truths):
-            target_box = ground_truth['boxes'][0]
-            target_class = ground_truth['labels'][0]
+            
+            # Extract target box and class  for this sample
+            target_box = ground_truth['bbox']
+            target_class = ground_truth['labels']
+
+            # Calculate the number of images for current class
             num_of_groundThruth_boxes += int(target_class == cls)
 
             # Extract predicted boxes/scores/classes
-            preditcted_boxes = prediction['boxes']
+            preditcted_boxes = prediction['bbox']
             preditcted_scores = prediction['scores']
             preditcted_classes = prediction['labels']
 
@@ -175,7 +181,7 @@ def compute_map(predictions, ground_truths, iou_threshold=0.5, score_threshold=0
         if len(class_scores) == 0:
             continue
 
-        sorted_idx = np.argsort(class_scores)[::-1]
+        sorted_idx = np.argsort(class_scores)[::-1].copy()
         class_matches = torch.tensor(class_matches, dtype=torch.float32)[sorted_idx]
 
         TP_cum = torch.cumsum(class_matches, dim=0)
@@ -184,7 +190,7 @@ def compute_map(predictions, ground_truths, iou_threshold=0.5, score_threshold=0
         recall = TP_cum / (num_of_groundThruth_boxes + 1e-6)
         precision = TP_cum / (TP_cum + FP_cum + 1e-6)
 
-        ap = compute_ap(recall.cpu().numpy(), precision.cpu().numpy())
+        ap = compute_ap(recall, precision)
         aps.append(ap)
 
     return sum(aps) / len(aps) if aps else 0.0

@@ -19,10 +19,20 @@ class SyentheticDataset(Dataset):
     
     image = cv2.imread(image_path)
     image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+    image = torch.tensor(image, dtype=torch.float32).permute(2, 0, 1) / 225.0
 
     # Read labels and draw boxes
     with open(label_path, 'r') as f:
         for line in f:
             label = line.strip().split()
+            
+            class_id = torch.tensor(int(label[0]), dtype=torch.int32)
+            bbox_coordinates = torch.tensor(list(map(float, label[1:])), dtype=torch.float32)
+
+            label = {
+               "class":class_id,
+               "bbox":bbox_coordinates
+            }
+            
 
     return (image, label)
