@@ -13,6 +13,8 @@ def main():
     # Parse script arguments
     parser = argparse.ArgumentParser()
     parser.add_argument("--dataset_path", type=str, required=True)
+    parser.add_argument("--batch_size", type=str, required=True)
+    parser.add_argument("--epoches", type=str, required=True)
 
     args = parser.parse_args()
 
@@ -23,8 +25,9 @@ def main():
 
     CLASSES_NUM = 43
     BOUNDING_BOXES_NUM = 2
-    BATCH_SIZE = 16
-    EPOCHES = 10
+    
+    batch_size = int(args.batch_size)
+    epoches = int(args.epoches)
 
     # Extract datasets
     train_dataset = SyentheticDataset(train_set_images_path, train_set_labels_path)
@@ -32,10 +35,10 @@ def main():
 
     # Create datasets loaders
     train_loader = DataLoader(
-        train_dataset, batch_size=BATCH_SIZE, shuffle=True, pin_memory=False
+        train_dataset, batch_size=batch_size, shuffle=True, pin_memory=False
     )
     val_loader = DataLoader(
-        val_dataset, batch_size=BATCH_SIZE, shuffle=True, pin_memory=False
+        val_dataset, batch_size=batch_size, shuffle=True, pin_memory=False
     )
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -43,7 +46,7 @@ def main():
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
     criterion = Loss(S=20).to(device)
 
-    for epoch in range(EPOCHES):
+    for epoch in range(epoches):
         # Set model to training mode
         model.train()
 
@@ -61,71 +64,93 @@ def main():
             batch_loss = criterion(preds, targets)  # this returns a scalar tensor
             optimizer.zero_grad()
 
+            # Compute acc
+            pred_classes = torch.argmax(preds[..., 5 * BOUNDING_BOXES_NUM:], dim=-1)  # (B, S, S)
+            true_classes = targets["class"].view(-1, 1, 1).expand_as(pred_classes)    # same shape
+            correct = (pred_classes == true_classes).sum().item()
+            total = pred_classes.numel()
+            batch_acc = correct / total
+
             # Update weights
             batch_loss.backward()
             optimizer.step()
 
-            # Print epoch, batch, and loss
             print(
-                f"Epoch [{epoch+1}/{EPOCHES}] | Batch [{batch_idx+1}/{len(train_loader)}] | Loss: {batch_loss.item():.4f}"
+            f"Epoch [{epoch+1}/{epoches}] |Training batch [{batch_idx+1}/{len(train_loader)}] "
+            f"|Loss: {batch_loss.item():.4f} |Accuracy: {batch_acc*100:.2f}%"
             )
+
 
         # Validation
         model.eval()
         with torch.no_grad():
-            all_preds, all_targets = [], []
-            preds = model(imgs)
-            cells_num = preds.shape[1]
+            for batch_idx, (imgs, targets) in enumerate(val_loader):
+                all_preds, all_targets = [], []
+                preds = model(imgs)
+                cells_num = preds.shape[1]
 
-            for sample_num in range(BATCH_SIZE):
-                # Extract predicted boxes coordinates, ojectness score and class probability
-                predicted_sample = {
-                    "bbox": torch.tensor([], device=device),
-                    "scores": torch.tensor([], device=device),
-                    "labels": torch.tensor([], device=device),
-                }
-                for cell_x in range(cells_num):
-                    for cell_y in range(cells_num):
+                for sample_num in range(batch_size):
+                    # Extract predicted boxes coordinates, ojectness score and class probability
+                    predicted_sample = {
+                        "bbox": torch.tensor([], device=device),
+                        "scores": torch.tensor([], device=device),
+                        "labels": torch.tensor([], device=device),
+                    }
+                    for cell_x in range(cells_num):
+                        for cell_y in range(cells_num):
 
-                        boxes = preds[
-                            sample_num, cell_x, cell_y, : 5 * BOUNDING_BOXES_NUM
-                        ].view(BOUNDING_BOXES_NUM, 5)
+                            boxes = preds[
+                                sample_num, cell_x, cell_y, : 5 * BOUNDING_BOXES_NUM
+                            ].view(BOUNDING_BOXES_NUM, 5)
 
-                        class_probability, class_idx = torch.max(
-                            preds[sample_num, cell_x, cell_y, 5 * BOUNDING_BOXES_NUM :], dim=0
-                        )
-
-                        for box in range(BOUNDING_BOXES_NUM):
-                            x, y, w, h, object_confindace = boxes[box]
-                            object_existance_score = (
-                                object_confindace * class_probability
+                            class_probability, class_idx = torch.max(
+                                preds[sample_num, cell_x, cell_y, 5 * BOUNDING_BOXES_NUM :], dim=0
                             )
 
-                            if object_existance_score > 0.5:
-                                predicted_box = torch.stack([x, y, w, h]).view(1, 4)
-                                predicted_sample["bbox"] = torch.cat(
-                                    [predicted_sample["bbox"], predicted_box]
-                                )
-                                predicted_sample["scores"] = torch.cat(
-                                    [
-                                        predicted_sample["scores"],
-                                        object_existance_score.view(1),
-                                    ]
-                                )
-                                predicted_sample["labels"] = torch.cat(
-                                    [predicted_sample["labels"], class_idx.view(1)]
+                            for box in range(BOUNDING_BOXES_NUM):
+                                x, y, w, h, object_confindace = boxes[box]
+                                object_existance_score = (
+                                    object_confindace * class_probability
                                 )
 
-                all_preds.append(predicted_sample)
+                                if object_existance_score > 0.5:
+                                    predicted_box = torch.stack([x, y, w, h]).view(1, 4)
+                                    predicted_sample["bbox"] = torch.cat(
+                                        [predicted_sample["bbox"], predicted_box]
+                                    )
+                                    predicted_sample["scores"] = torch.cat(
+                                        [
+                                            predicted_sample["scores"],
+                                            object_existance_score.view(1),
+                                        ]
+                                    )
+                                    predicted_sample["labels"] = torch.cat(
+                                        [predicted_sample["labels"], class_idx.view(1)]
+                                    )
 
-            # Add current batch targets boxes and classes
-            target_sample = {
-                "bbox": targets["bbox"][sample_num].view(1, 4),
-                "labels": targets["class"][sample_num].unsqueeze(0),
-            }
-            all_targets.append(target_sample)
+                    all_preds.append(predicted_sample)
 
-            print("mAP:", compute_map(all_preds, all_targets))
+                    # Add current batch targets boxes and classes
+                    target_sample = {
+                        "bbox": targets["bbox"][sample_num].view(1, 4),
+                        "labels": targets["class"][sample_num].unsqueeze(0),
+                    }
+                    all_targets.append(target_sample)
+                
+                # Compute mAP
+                batch_mAP = compute_map(all_preds, all_targets)
+                
+                # Compute validation accuracy
+                pred_classes = torch.argmax(preds[..., 5 * BOUNDING_BOXES_NUM:], dim=-1)
+                true_classes = targets["class"].view(-1, 1, 1).expand_as(pred_classes)
+                val_correct = (pred_classes == true_classes).sum().item()
+                val_total = pred_classes.numel()
+                val_acc = val_correct / val_total
+
+                print(
+                f"Epoch [{epoch+1}/{epoches}] |Validation batch [{batch_idx+1}/{len(val_loader)}] "
+                f"|Loss: {batch_loss.item():.4f} |Accuracy: {batch_acc*100:.2f}%"
+                )
 
 if __name__ == "__main__" :
     main()
