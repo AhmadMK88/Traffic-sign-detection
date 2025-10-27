@@ -17,6 +17,7 @@ def main():
     parser.add_argument("--dataset_path", type=str, required=True)
     parser.add_argument("--batch_size", type=str, required=True)
     parser.add_argument("--epoches", type=str, required=True)
+    parser.add_argument("--model_config_path", type=str, required=False)
 
     args = parser.parse_args()
 
@@ -47,10 +48,17 @@ def main():
     model = Model(num_of_classes=CLASSES_NUM, num_of_boxes=BOUNDING_BOXES_NUM).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
     criterion = Loss(S=20).to(device)
+    start_epoch = 0
 
-    for epoch in range(epoches):
+    if args.model_config_path is not None :
+        checkpoint = torch.load(args.model_config_path, map_location=device)
+        model.load_state_dict(checkpoint["model_state_dict"])
+        optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+        start_epoch = checkpoint["epoch"] 
 
-        print(f"Epoch {epoch+1}/{epoches} started :")
+    for epoch in range(start_epoch, start_epoch + epoches):
+        print('===================================')
+        print(f"Epoch {epoch+1} Started:")
 
         # ---- Training ----
         train_loss = 0.0
@@ -126,10 +134,7 @@ def main():
             ncols=100,
             leave=False
         )
-
-        avg_validation_mAP = 0.0
-        avg_validation_accuracy = 0.0
-        
+    
         with torch.no_grad():
             for batch_idx, (images, targets) in progress_bar:
                 all_predictions, all_targets = [], []
@@ -202,22 +207,35 @@ def main():
                 batch_accuracy = val_correct / val_total
 
                 # Track validation mAP and acc
-                avg_validation_mAP += batch_mAP
-                avg_validation_accuracy += batch_accuracy
+                validation_mAP += batch_mAP
+                validation_accuracy += batch_accuracy
 
                 # Update progress bar text
                 progress_bar.set_postfix({
                     "Validation mAP": f"{batch_mAP:.4f}",
                     "Validation accuracy": f"{validation_accuracy*100:.2f}%"
                 })
-
+            avg_validation_mAP = validation_mAP / len(val_loader)
+            avg_validation_accuracy = validation_accuracy / len(val_loader)
+            
             progress_bar.close()
             print(
             f"Avg validation mAP: {avg_validation_mAP:.4f} | Avg valiadtion accuracy: {avg_validation_accuracy*100:.2f}%"
             )
 
-        print(f"Epoch {epoch+1}/{epoches} finished")
-        print('------------------------------------')
+        print(f"Epoch {epoch+1} Finished:")
+        print('=====================================')
+    
+    # Check if a folder for weights exist
+    if os.path.isdir("weights") == False:
+        os.mkdir("weights")
+
+    checkpoint_path = os.path.join("weights", f"{epoch+1} epochs trained model")
+    torch.save({
+        "epoch": epoch+1,
+        "model_state_dict": model.state_dict(),
+        "optimizer_state_dict": optimizer.state_dict(),
+    }, checkpoint_path)
 
 if __name__ == "__main__" :
     main()
