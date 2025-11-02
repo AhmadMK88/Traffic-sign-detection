@@ -1,4 +1,5 @@
 import argparse
+import json
 import torch
 from torch.utils.data import DataLoader
 from tqdm import tqdm
@@ -9,6 +10,55 @@ from Utils.metrics import *
 import os
 import zipfile
 
+def load_metrics(metrics_path):
+    """
+    load metrics from Json file 
+    Args:
+        metrics_path (string): the path of Json file storing metrics to load
+    Returns:
+        metrics (dict): loaded metrics 
+    """
+    default_metrics = {
+        'Training loss':[],
+        'Training accuracy':[],
+        'Validation mAP':[],
+        'Validation accuracy':[]
+    }
+
+    try:
+        with open(metrics_path, "r", encoding="utf-8") as file:
+            metrics = json.load(file)
+            return metrics
+    
+    except TypeError:
+        print("No path was given")
+        print("Returning empty metrics")
+        return default_metrics
+    
+    except FileNotFoundError:
+        print("Given metrics file was not found")
+        print("Returning empty metrics")
+        return default_metrics
+    
+def save_metrics(metrics, metrics_path):
+    """
+    save metrics obtained after training and evaluation process 
+    and save them in a Json file 
+    Args:
+        metrics (dict): result training and evalutaion metrics
+        metrics_path (string): the path of Json file storing metrics to load
+    """
+    try:
+        with open(metrics_path, "w") as file:
+            json.dump(metrics, file, indent=4)
+    
+    except TypeError:
+        with open("metrics.json", "w") as file:
+            json.dump(metrics, file, indent=4)
+    
+    except FileNotFoundError:
+        with open("metrics.json", "w") as file:
+            json.dump(metrics, file, indent=4)
 
 def main():
 
@@ -18,7 +68,7 @@ def main():
     parser.add_argument("--batch_size", type=str, required=True)
     parser.add_argument("--epoches", type=str, required=True)
     parser.add_argument("--model_config_path", type=str, required=False)
-
+    parser.add_argument("--metrics_path", type=str, required=False)
     args = parser.parse_args()
 
     train_set_images_path = f"{args.dataset_path}/images/train"
@@ -50,11 +100,15 @@ def main():
     criterion = Loss(S=20).to(device)
     start_epoch = 0
 
+    # Load model status checkpoint
     if args.model_config_path is not None :
         checkpoint = torch.load(args.model_config_path, map_location=device)
         model.load_state_dict(checkpoint["model_state_dict"])
         optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
         start_epoch = checkpoint["epoch"] 
+
+    # Load metrics if they exist
+    metrics = load_metrics(args.metrics_path)
 
     for epoch in range(start_epoch, start_epoch + epoches):
         print('===================================')
@@ -118,6 +172,8 @@ def main():
         print(
             f"Avg train loss: {avg_train_loss:.4f} | Avg train accuracy: {avg_train_accuracy*100:.2f}%"
         )
+        metrics['Training loss'].append(avg_train_loss)
+        metrics['Training accuracy'].append(avg_train_accuracy)
 
         # ---- Validation ----
         validation_mAP = 0.0
@@ -222,7 +278,9 @@ def main():
             print(
             f"Avg validation mAP: {avg_validation_mAP:.4f} | Avg valiadtion accuracy: {avg_validation_accuracy*100:.2f}%"
             )
-
+            metrics['Validation mAP'].append(avg_validation_mAP)
+            metrics['Validation accuracy'].append(avg_validation_accuracy)
+        
         print(f"Epoch {epoch+1} Finished:")
         print('=====================================')
     
@@ -230,12 +288,16 @@ def main():
     if os.path.isdir("weights") == False:
         os.mkdir("weights")
 
+    # Save new checkpoint settings
     checkpoint_path = os.path.join("weights", f"{epoch+1} epochs trained model")
     torch.save({
         "epoch": epoch+1,
         "model_state_dict": model.state_dict(),
         "optimizer_state_dict": optimizer.state_dict(),
     }, checkpoint_path)
+
+    # Save new metrics
+    save_metrics(metrics, args.metrics_path)
 
 if __name__ == "__main__" :
     main()
