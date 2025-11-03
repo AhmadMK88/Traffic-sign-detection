@@ -1,5 +1,6 @@
 import argparse
 import json
+import matplotlib.pyplot as plt
 import torch
 from torch.utils.data import DataLoader
 from tqdm import tqdm
@@ -60,6 +61,44 @@ def save_metrics(metrics, metrics_path):
         with open("metrics.json", "w") as file:
             json.dump(metrics, file, indent=4)
 
+def plot_metrics(metrics, metrics_plots_path="plots"):
+    """
+    Plot training and validation metrics over epochs.
+
+    Args:
+        metrics (dict): Dictionary containing metric name → list of values per epoch.
+        metrics_plots_path (str): Directory to save the plot image.
+    """
+
+    # Create output directory if needed
+    os.makedirs(metrics_plots_path, exist_ok=True)
+
+    # Setup figure with 2x2 subplots (for 4 metrics)
+    fig, axes = plt.subplots(2, 2, figsize=(18, 12))
+    fig.suptitle("Training and Validation Metrics", fontsize=16)
+    axes = axes.flatten()
+
+    # Plot each metric
+    for i, (metric, values) in enumerate(metrics.items()):
+        color = "blue" if "Training" in metric else "orange"
+        axes[i].plot(values, label=metric, color=color)
+        axes[i].set_title(metric)
+        axes[i].set_xlabel("Epoch")
+        axes[i].set_ylabel(metric)
+        axes[i].legend()
+        axes[i].grid(True)
+
+    # Number of epochs
+    num_of_epochs = len(next(iter(metrics.values())))
+
+    # Save figure
+    plot_filename = f"{num_of_epochs}_epochs_trained_model.png"
+    plot_path = os.path.join(metrics_plots_path, plot_filename)
+    plt.savefig(plot_path, dpi=300)
+    plt.close(fig)
+
+    print(f"Metrics plot saved to: {plot_path}")
+    
 def main():
 
     # Parse script arguments
@@ -298,6 +337,11 @@ def main():
 
     # Save new metrics
     save_metrics(metrics, args.metrics_path)
+
+    #plot metrics
+    plot_metrics(metrics)
+
+    
 
 if __name__ == "__main__" :
     main()
