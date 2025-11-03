@@ -14,10 +14,11 @@ import zipfile
 def load_metrics(metrics_path):
     """
     load metrics from Json file 
+    
     Args:
         metrics_path (string): the path of Json file storing metrics to load
     Returns:
-        metrics (dict): loaded metrics 
+        metrics (dict): loaded metrics if given path exists otherwise empty metrics
     """
     default_metrics = {
         'Training loss':[],
@@ -26,39 +27,39 @@ def load_metrics(metrics_path):
         'Validation accuracy':[]
     }
 
-    try:
-        with open(metrics_path, "r", encoding="utf-8") as file:
-            metrics = json.load(file)
-            return metrics
-    
-    except TypeError:
-        print("No path was given")
-        print("Returning empty metrics")
+    if metrics_path is None:
+        print("No metrics path was not given. Returning empty metrics.")
         return default_metrics
     
-    except FileNotFoundError:
-        print("Given metrics file was not found")
-        print("Returning empty metrics")
+    if not os.path.exists(metrics_path):
+        print(f"Metrics folder: {metrics_path} was not found. Returning empty metrics.")
         return default_metrics
+    
+    with open(metrics_path, "r", encoding="utf-8") as file: 
+        metrics = json.load(file) 
+        print(f"Loaded metrics from {metrics_path}")
+        return metrics
     
 def save_metrics(metrics, metrics_path):
     """
-    save metrics obtained after training and evaluation process 
-    and save them in a Json file 
+    Save metrics obtained after training and evaluation process in a Json file 
+    
     Args:
         metrics (dict): result training and evalutaion metrics
-        metrics_path (string): the path of Json file storing metrics to load
+        metrics_path (string): the path of Json file storing metrics to be saved
     """
-    try:
-        with open(metrics_path, "w") as file:
+    if metrics_path is None:
+        print("No metrics path was not given. Saving in current directory.")
+        with open("metrics.json", "w") as file: 
             json.dump(metrics, file, indent=4)
     
-    except TypeError:
-        with open("metrics.json", "w") as file:
+    elif os.path.exists(metrics_path):
+        print(f"Metrics folder: {metrics_path} was not found. saving in current directory.")
+        with open("metrics.json", "w") as file: 
             json.dump(metrics, file, indent=4)
-    
-    except FileNotFoundError:
-        with open("metrics.json", "w") as file:
+    else:
+        print(f"Saved metrics to {metrics_path}")
+        with open(metrics_path, "w") as file: 
             json.dump(metrics, file, indent=4)
 
 def plot_metrics(metrics, metrics_plots_path="plots"):
@@ -80,11 +81,18 @@ def plot_metrics(metrics, metrics_plots_path="plots"):
 
     # Plot each metric
     for i, (metric, values) in enumerate(metrics.items()):
+
+        if "accuracy" in metric:
+            values = [v * 100 for v in values]
+            axes[i].set_ylabel("Accuracy (%)")
+        else:
+            axes[i].set_ylabel(metric)
+        
         color = "blue" if "Training" in metric else "orange"
         axes[i].plot(values, label=metric, color=color)
         axes[i].set_title(metric)
         axes[i].set_xlabel("Epoch")
-        axes[i].set_ylabel(metric)
+
         axes[i].legend()
         axes[i].grid(True)
 
@@ -151,7 +159,7 @@ def main():
 
     for epoch in range(start_epoch, start_epoch + epoches):
         print('===================================')
-        print(f"Epoch {epoch+1} Started:")
+        print(f"Epoch {epoch+1} Started")
 
         # ---- Training ----
         train_loss = 0.0
@@ -320,7 +328,7 @@ def main():
             metrics['Validation mAP'].append(avg_validation_mAP)
             metrics['Validation accuracy'].append(avg_validation_accuracy)
         
-        print(f"Epoch {epoch+1} Finished:")
+        print(f"Epoch {epoch+1} Finished")
         print('=====================================')
     
     # Check if a folder for weights exist
@@ -341,7 +349,6 @@ def main():
     #plot metrics
     plot_metrics(metrics)
 
-    
 
 if __name__ == "__main__" :
     main()
