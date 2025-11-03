@@ -193,4 +193,4 @@ def compute_map(predictions, ground_truths, iou_threshold=0.5, score_threshold=0
         ap = compute_ap(recall, precision)
         aps.append(ap)
 
-    return sum(aps) / len(aps) if aps else 0.0
+    return float(sum(aps) / len(aps)) if aps else 0.0
