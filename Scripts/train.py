@@ -192,10 +192,12 @@ def main():
             optimizer.zero_grad()
 
             # Compute accuracy
+            object_mask = predictions[..., 4] > 0.5
             predicted_classes = torch.argmax(predictions[..., 5 * BOUNDING_BOXES_NUM:], dim=-1)  
             true_classes = targets["class"].view(-1, 1, 1).expand_as(predicted_classes)
-            correct = (predicted_classes == true_classes).sum().item()
-            total = predicted_classes.numel()
+            
+            correct = ((predicted_classes == true_classes)& object_mask).sum().item()
+            total = object_mask.sum().item() + 1e-6
             batch_accuracy = correct / total
 
             # Update weights
@@ -303,10 +305,12 @@ def main():
                 batch_mAP = compute_map(all_predictions, all_targets)
 
                 # Compute validation accuracy
+                object_mask = predictions[..., 4] > 0.5
                 predicted_classes = torch.argmax(predictions[..., 5 * BOUNDING_BOXES_NUM:], dim=-1)
                 true_classes = targets["class"].view(-1, 1, 1).expand_as(predicted_classes)
-                val_correct = (predicted_classes == true_classes).sum().item()
-                val_total = predicted_classes.numel()
+                
+                val_correct = ((predicted_classes == true_classes)& object_mask).sum().item()
+                val_total = object_mask.sum().item() + 1e-6
                 batch_accuracy = val_correct / val_total
 
                 # Track validation mAP and acc
