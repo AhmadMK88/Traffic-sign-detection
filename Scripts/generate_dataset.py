@@ -7,9 +7,12 @@ import matplotlib.pyplot as plt
 import numpy as np
 import os
 import pandas as pd
+import shutil
 import random
 from roboflow import Roboflow
 import subprocess
+
+GLOBAL_INDEX = 0
 
 def download_signs(kaggle_username, kaggle_key):
     '''
@@ -49,11 +52,12 @@ def save_example(image, label, image_path, label_path):
         image_path (str): path to save image
         label_path (str): path to save label
     '''
+
+    global GLOBAL_INDEX
     
     # Extract example index and write image and label name
-    example_index = len(os.listdir(image_path))
-    image_filename = f'image #{example_index}.jpg'
-    label_filename = f'label #{example_index}.txt'
+    image_filename = f'image #{GLOBAL_INDEX}.jpg'
+    label_filename = f'label #{GLOBAL_INDEX}.txt'
     
     # Extract sign bounding box attributes
     sign_class, x_center, y_center, width, height = label
@@ -64,6 +68,8 @@ def save_example(image, label, image_path, label_path):
     # Save YOLO label
     with open(os.path.join(label_path, label_filename), "w") as f:
         f.write(f"{sign_class} {x_center:.6f} {y_center:.6f} {width:.6f} {height:.6f}\n")
+    
+    GLOBAL_INDEX += 1
 
 def resize_example(image, label, size = (640, 640)):
     '''
@@ -96,6 +102,62 @@ def resize_example(image, label, size = (640, 640)):
     height = (bbox_height_px * resize_scale_y) / size[0]
 
     return resized_image, (x_center, y_center, width, height)
+
+def split_dataset(
+    images_dir,
+    labels_dir,
+    train_ratio=0.7,
+    val_ratio=0.2,
+    test_ratio=0.1,
+    seed=42
+):
+    '''
+    Split dataset to train, val and test 
+    
+    Args:
+        images_dir (string) : path to images directory.
+        labels_dir (string) : path to labels directory.
+        train_ratio (float) : ratio from dataset to take for training
+        val_ratio (float) : ratio from dataset to take for validation
+        test_ratio (float) : ratio from dataset to take for testing
+        seed (int) : number of random seed
+    '''
+
+    random.seed(seed)
+
+    images = sorted(os.listdir(images_dir))
+    random.shuffle(images)
+
+    n = len(images)
+    train_end = int(n * train_ratio)
+    val_end = train_end + int(n * val_ratio)
+
+    splits = {
+        "train": images[:train_end],
+        "val": images[train_end:val_end],
+        "test": images[val_end:]
+    }
+
+    os.makedirs("Dataset")
+    os.makedirs("Dataset/images")
+    os.makedirs("Dataset/labels")
+
+    for split in ["train", "val", "test"]:
+        os.makedirs(f"Dataset/images/{split}", exist_ok=True)
+        os.makedirs(f"Dataset/labels/{split}", exist_ok=True)
+
+        for img in splits[split]:
+            label = img.replace(".jpg", ".txt").replace("image", "label")
+
+            shutil.move(
+                os.path.join(images_dir, img),
+                os.path.join("Dataset", "images", split, img),
+            )
+
+            shutil.move(
+                os.path.join(labels_dir, label),
+                os.path.join("Dataset", "labels", split, label),
+            )
 
 def main():
 
@@ -140,20 +202,17 @@ def main():
         ])
 
     # Create full yolo dataset folder
-    os.makedirs("Dataset", exist_ok=True)
+    ALL_IMAGES = "Dataset_all/images"
+    ALL_LABELS = "Dataset_all/labels"
 
-    os.makedirs("Dataset/images", exist_ok=True)
-    os.makedirs("Dataset/images/train", exist_ok=True)
-    os.makedirs("Dataset/images/val", exist_ok=True)
-    os.makedirs("Dataset/images/test", exist_ok=True)
-
-    os.makedirs("Dataset/labels", exist_ok=True)
-    os.makedirs("Dataset/labels/train", exist_ok=True)
-    os.makedirs("Dataset/labels/val", exist_ok=True)
-    os.makedirs("Dataset/labels/test", exist_ok=True)
-
+    os.makedirs(ALL_IMAGES, exist_ok=True)
+    os.makedirs(ALL_LABELS, exist_ok=True)
     # Store current directory
     current_directory = os.getcwd()
+
+    image_output_path = os.path.join(current_directory, ALL_IMAGES)
+    label_output_path = os.path.join(current_directory, ALL_LABELS)
+
 
     # Create synthetic images for train-set and validation-set
     # this is done by applying transformations to sign then pasting sign to background image
@@ -176,18 +235,9 @@ def main():
     backgrounds = [ background for background in os.listdir(backgrounds_path)]
     random.shuffle(backgrounds)
 
-    image_output_path = None
-    label_output_path = None
-
+    # add synthetic examples
     for background_index in range(600):
         for sign_class, sign in zip(df.ClassId, df.Path):
-
-            if background_index < 480:
-                image_output_path = os.path.join(current_directory, 'Dataset/images/train')
-                label_output_path = os.path.join(current_directory, 'Dataset/labels/train')
-            else:
-                image_output_path = os.path.join(current_directory, 'Dataset/images/val')
-                label_output_path = os.path.join(current_directory, 'Dataset/labels/val')
 
             # Get a random scaling factor
             scale = random.uniform(0.5, 1.5)
@@ -268,9 +318,6 @@ def main():
         "german-traffic-sign-detection-benchmark-gtsdb/TrainIJCNN2013/TrainIJCNN2013",
     )
 
-    test_image_output_path = os.path.join(current_directory, 'Dataset/images/test')
-    test_label_output_path = os.path.join(current_directory, 'Dataset/labels/test')
-
     with open(os.path.join(images_path, 'gt.txt'), 'r') as file:
         for line in file:
             image_name, left, top, right, bottom, sign_class = line.strip().split(';')
@@ -292,7 +339,9 @@ def main():
             image, label = resize_example(image, label, size = (640, 640))
             label = (sign_class, ) + label
 
-            save_example(image, label, test_image_output_path, test_label_output_path)
+            save_example(image, label, image_output_path, label_output_path)
+
+    split_dataset(image_output_path, label_output_path)
 
 if __name__ == "__main__":
     main()
