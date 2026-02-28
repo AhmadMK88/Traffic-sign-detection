@@ -1,4 +1,6 @@
 import argparse
+import cv2
+import numpy as np
 import torch
 import json
 import os
@@ -7,6 +9,84 @@ from tqdm import tqdm
 from Utils.dataset import SyentheticDataset
 from Utils.model import Model
 from Utils.metrics import compute_map
+
+def denormalize_image(img_tensor):
+    """
+    Undo ImageNet normalization for visualization.
+
+    Args:
+        img_tensor (torch.Tensor): shape (3,H,W)
+
+    Returns:
+        numpy image (H,W,3) in uint8 RGB
+    """
+    mean = torch.tensor([0.485, 0.456, 0.406]).view(3,1,1)
+    std = torch.tensor([0.229, 0.224, 0.225]).view(3,1,1)
+
+    img = img_tensor.cpu() * std + mean
+    img = img.clamp(0,1)
+
+    img_np = img.permute(1,2,0).numpy()
+    img_np = (img_np * 255).astype(np.uint8)
+
+    return img_np
+
+def draw_predictions(image, predictions, targets, save_path=None):
+    """
+    Draw predicted and ground truth bounding boxes.
+
+    Args:
+        - image(np.array) : sample image array
+        - predictions(np.array) : sample predictions
+        - targets(np.array) : sample targets
+        - save_path(str): path to save image
+    """
+
+    image = image.copy()
+    h, w = image.shape[:2]
+
+    # Draw ground truth (GREEN)
+    for box, label in zip(targets["bbox"], targets["labels"]):
+        x, y, bw, bh = box
+
+        x1 = int((x - bw/2) * w)
+        y1 = int((y - bh/2) * h)
+        x2 = int((x + bw/2) * w)
+        y2 = int((y + bh/2) * h)
+
+        cv2.rectangle(image, (x1, y1), (x2, y2), (0,255,0), 2)
+        cv2.putText(image, f"GT:{label.item()}",
+                    (x1, y1-5),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.5,
+                    (0,255,0),
+                    1)
+
+    # Draw predictions (RED)
+    for box, score, label in zip(
+        predictions["bbox"],
+        predictions["scores"],
+        predictions["labels"]
+    ):
+        x, y, bw, bh = box
+
+        x1 = int((x - bw/2) * w)
+        y1 = int((y - bh/2) * h)
+        x2 = int((x + bw/2) * w)
+        y2 = int((y + bh/2) * h)
+
+        cv2.rectangle(image, (x1, y1), (x2, y2), (0,0,255), 2)
+        cv2.putText(image, f"{label.item()}:{score:.2f}",
+                    (x1, y1-5),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.5,
+                    (0,0,255),
+                    1)
+
+    if save_path:
+        cv2.imwrite(save_path, image)
+
+    return image
 
 def main():
     """
@@ -28,6 +108,9 @@ def main():
     # Dataset paths (using test split)
     test_images_path = f"{args.dataset_path}/images/test"
     test_labels_path = f"{args.dataset_path}/labels/test"
+
+    # Create folder to store images
+    os.makedirs("visual_results", exist_ok=True)
 
     # Load datasettest
     test_dataset = SyentheticDataset(test_images_path, test_labels_path)
@@ -124,6 +207,16 @@ def main():
                     "labels": targets["class"][sample_num].unsqueeze(0),
                 }
                 all_targets.append(target_sample)
+
+                # Convert tensor image to numpy
+                img_np = denormalize_image(images[sample_num])
+
+                draw_predictions(
+                    img_np,
+                    predicted_sample,
+                    target_sample,
+                    save_path=f"visual_results/sample_{batch_idx}_{sample_num}.jpg"
+                )
 
             # Compute mAP for batch
             batch_mAP = compute_map(all_predictions, all_targets)
