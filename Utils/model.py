@@ -36,19 +36,59 @@ class Head(nn.Module):
             self.num_of_boxes * 5 + self.num_of_classes,
             kernel_size=1
         )
+
+        # Anchors (normalized w.r.t image size)
+        self.register_buffer(
+            "anchors",
+            torch.tensor([
+                [0.08, 0.08],
+                [0.15, 0.15],
+            ])  # shape: (B, 2)
+        )
     
-    def forward(self, x ):
-
-        # Reduce channels from 2048 to 512
+    def forward(self, x):
         x = self.reduce(x)
-        # Refine features
         x = self.conv_block(x)
-
-        # Prediction
         x = self.pred(x)
 
-        # Reshape: (N, S, S, B*5 + C)
-        out = x.permute(0, 2, 3, 1)
+        # (B, C, S, S) -> (B, S, S, C)
+        x = x.permute(0, 2, 3, 1)
+
+        B = self.num_of_boxes
+        C = self.num_of_classes
+        S = x.shape[1]
+
+        # Split predictions
+        box_preds = x[..., :5 * B].view(*x.shape[:3], B, 5)
+        class_preds = x[..., 5 * B:]
+
+        # Apply activations
+        box_preds[..., 0:2] = torch.sigmoid(box_preds[..., 0:2])  # x, y
+        box_preds[..., 4] = torch.sigmoid(box_preds[..., 4])      # confidence
+
+
+        # Apply anchors (w, h)
+        anchors = self.anchors.view(1, 1, 1, B, 2).to(x.device)
+        box_preds[..., 2:4] = anchors * torch.exp(box_preds[..., 2:4])
+
+        # GRID DECODING 
+        grid_y, grid_x = torch.meshgrid(
+            torch.arange(S),
+            torch.arange(S),
+            indexing="ij"
+        )
+
+        grid_x = grid_x.to(x.device).view(1, S, S, 1)
+        grid_y = grid_y.to(x.device).view(1, S, S, 1)
+
+        box_preds[..., 0] = (box_preds[..., 0] + grid_x) / S
+        box_preds[..., 1] = (box_preds[..., 1] + grid_y) / S
+
+        class_preds = torch.softmax(class_preds, dim=-1)
+
+        # Merge back
+        box_preds = box_preds.view(*x.shape[:3], 5 * B)
+        out = torch.cat([box_preds, class_preds], dim=-1)
 
         return out
 
