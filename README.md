@@ -29,10 +29,7 @@ The model is trained on a mix of:
 ---
 
 ## Model Architecture
-
-```
 ![architecture](arch/arch.png)
-```
 
 Where:
 
@@ -48,7 +45,8 @@ Example performance:
 
 * **mAP:** 0.975
 * **Accuracy:** 97.64%
-
+* [Output sample1](Output/output1.mp4)
+* [Output sample2](Output/output2.mp4)
 ---
 
 ## Installation
@@ -77,6 +75,19 @@ python generate_dataset.py \
   --kaggle_username YOUR_USERNAME \
   --kaggle_key YOUR_KEY
 ```
+example for dataset:
+- sign: 
+
+![sign](Sample/Sign.png)
+
+- Background:
+
+![background](Sample/Background.jfif)
+
+- Combined:
+
+![combined](Sample/Combined.jfif)
+
 
 ---
 
